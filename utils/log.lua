@@ -1,79 +1,70 @@
+local argcheck = require 'argcheck'
 local tnt = require 'torchnet'
 local logtext = require 'torchnet.log.view.text'
 local logstatus = require 'torchnet.log.view.status'
-local _, display = pcall(require , 'display')
 
-local plotValues = {}
-local function addPlot(name, keys, ylabel)
-  if not display then return end
-
-  local ylabel = ylabel or 'value'
-  plotValues[name] = {}
-  plotValues[name].config = {
-    title = name,
-    labels = keys,
-    ylabel = ylabel
-  }
-  plotValues[name].data = {}
-  return function(log)
-    local config = plotValues[name].config
-    local entry = {}
-    for _, key in ipairs(keys) do
-      local val = log:get{key = key}
-      table.insert(entry, val)
+getLog = argcheck{
+  {name="logFile", type="string"},
+  {name="keys", type="table"},
+  {name="nestFormat", type="string", default="%s (Top %s)"},
+  call = function(logFile, keys, nestFormat)
+    local logKeys = {}
+    for id, key in pairs(keys) do
+      if type(key) == 'table' then
+        for _, subKey in pairs(key) do
+          table.insert(logKeys, (nestFormat):format(id, subKey))
+        end
+      else
+        table.insert(logKeys, key)
+      end
     end
-    table.insert(plotValues[name].data, entry)
-    config.win = display.plot(plotValues[name].data, config)
 
-  end
-end
-
-function logValues(name, epoch, loss, error)
-  local values = {Epoch = epoch}
-  values[name .. ' Loss'] = loss
-  for k,val in pairs(error) do
-    values[('%s Error (Top %s)'):format(name, k)] = val
-  end
-  return values
-end
-
-function getLog(logFile, entries, classTopK)
-  local classTopK = classTopK or {1,5}
-
-  local logKeys = {'Epoch'}
-  local logKeysFormat = {'%5.3f'}
-  local logFormat = {'%5s'}
-  for _, e in pairs(entries) do
-    table.insert(logKeys, ('%s Loss'):format(e))
-    table.insert(logKeysFormat, '%10.3f')
-    table.insert(logFormat, '%10s')
-    for _, k in pairs(classTopK) do
-      table.insert(logKeys, ('%s Error (Top %s)'):format(e,k))
+    local logKeysFormat = {}
+    local logFormat = {}
+    for i in pairs(logKeys) do
       table.insert(logKeysFormat, '%10.3f')
       table.insert(logFormat, '%10s')
     end
-  end
 
-
-  local log = tnt.Log{
-    keys = logKeys,
-    onFlush = {
-      -- write out all keys in "log" file
-      logtext{filename=logFile, keys=logKeys, format=logKeysFormat},
-      logtext{keys=logKeys},
-      addPlot('Classification Error', {'Epoch','Train Error (Top 1)', 'Test Error (Top 1)'}, 'Error %'),
-    },
-    onSet = {
-      -- add status to log
-      logstatus{filename=logFile}
+    local log = tnt.Log{
+      keys = logKeys,
+      onFlush = {
+        -- write out all keys in "log" file
+        logtext{filename=logFile, keys=logKeys, format=logKeysFormat},
+        logtext{keys=logKeys},
+        -- addPlot('Classification Error', {'Epoch','Train Error (Top 1)', 'Test Error (Top 1)'}, 'Error %'),
+      },
+      onSet = {
+        -- add status to log
+        logstatus{filename=logFile}
+      }
     }
-  }
 
-  log:set{
-    __status__ = string.format(table.concat(logFormat, ' | '), unpack(logKeys)),
-  }
-  return log
-end
+    log:set{
+      __status__ = string.format(table.concat(logFormat, ' | '), unpack(logKeys)),
+    }
+
+    log.set = argcheck{
+      {name="self", type="tnt.Log"},
+      {name="keys", type="table"},
+      call =
+      function(self, keys)
+        for key, value in pairs(keys) do
+          if type(value) == 'table' then
+            for subKey, subVal in pairs(value) do
+              local newKey = (nestFormat):format(key, subKey)
+              tnt.Log.set(self, {[newKey] = subVal})
+            end
+          else
+            tnt.Log.set(self, {[key] = value})
+          end
+        end
+      end
+    }
+
+    return log
+  end
+}
 
 function updateOpt(optState, epoch, regime, verbose)
   if regime and regime.epoch then

@@ -36,13 +36,16 @@ getImageNet = argcheck{
   end
 }
 
-getFolderDataset = argcheck{
-  {name='path', type='string', default='/home/ehoffer/Datasets/'},
-  {name='target', type='function',default=function(x) return x end},
-  {name='preProcDir', type='string', default='./'},
-  call = function (path, target, preProcDir)
+
+getFileNames = argcheck{
+  {name='path', type='string', default='/media/ehoffer/SSD/Datasets/'},
+  {name='ext', type='string', default='jpg'},
+  call = function (path, ext)
+    local filenames = sys.execute(("find %s -iname '*.%s'"):format(path, ext)):split('\n')
+    return tnt.TableDataset{data = filenames}
   end
 }
+
 
 getDataset = argcheck{
   {name='dataset', type='string',default='Cifar10'},

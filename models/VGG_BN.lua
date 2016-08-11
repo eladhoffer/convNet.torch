@@ -49,4 +49,10 @@ classifier:add(nn.LogSoftMax())
 local model = nn.Sequential()
 model:add(features):add(classifier)
 
+
+model.inputSize = 224
+model.reshapeSize = 256
+model.inputMean = 128
+model.inputStd = 128
+
 return model
