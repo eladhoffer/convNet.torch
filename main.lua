@@ -194,12 +194,16 @@ criterion = criterion:type(tensorType)
 ---Support for multiple GPUs - currently data parallel scheme
 if opt.nGPU > 1 then
   local net = model
-  model = nn.DataParallelTable(1)
-  for i = 1, opt.nGPU do
-    cutorch.setDevice(i)
-    model:add(net:clone():cuda(), i) -- Use the ith GPU
-  end
-  cutorch.setDevice(opt.devid)
+  model = nn.DataParallelTable(1, true, true)
+  local useCudnn = cudnn ~= nil
+  model:add(net, torch.range(1, opt.nGPU):totable()) -- Use the ith GPU
+  model:threads(function()
+      if useCudnn then
+        require 'cudnn'
+        cudnn.benchmark = true
+      end
+    end
+  )
 end
 
 -- Optimization configuration
@@ -268,7 +272,7 @@ local function forward(dataIterator, train)
     xlua.progress(numSamples, sizeData)
     if numSamples % opt.evalN < opt.batchSize then
       print('Current Loss: ' .. lossMeter:value())
-      print('Current Error: ' .. classMeter:value())
+      print('Current Error: ' .. classMeter:value()[1])
     end
   end
   return lossMeter:value(), classMeter:value()
