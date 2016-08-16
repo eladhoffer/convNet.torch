@@ -101,15 +101,28 @@ log:attach('onFlush',
 local netFilename = paths.concat(opt.savePath, 'savedModel')
 
 ----------------------------------------------------------------------
+local config = {
+    inputSize = 32,
+    reshapeSize = 32,
+    inputMean = 128,
+    inputStd = 128,
+    regime = {}
+}
+local function setConfig(target, origin, overwrite)
+    for key in pairs(config) do
+        if overwrite or target[key] == nil then
+            target[key] = origin[key]
+        end
+    end
+end
+
 -- Model + Loss:
 local model, criterion
 if paths.filep(opt.load) then
   local conf, criterion = require(opt.model)
   model = torch.load(opt.load)
   if not opt.resume then
-    for _, val in pairs({'epoch', 'regime', 'optimState'}) do
-      model[val] = conf[val]
-    end
+    setConfig(model, conf)
   end
 else
   model, criterion = require(opt.model)
@@ -117,11 +130,7 @@ end
 
 criterion = criterion or nn.ClassNLLCriterion()
 
-if not (model.inputMean and model.inputStd) then
-  model.inputMean, model.inputStd = 128, 128--estimateMeanStd(trainData)
-end
-model.inputSize = model.inputSize or 32
-model.reshapeSize = model.reshapeSize or model.inputSize
+setConfig(model, config)
 
 -- Data preparation
 local trainData = getDataset(opt.dataset, 'train')
@@ -196,14 +205,17 @@ if opt.nGPU > 1 then
   local net = model
   model = nn.DataParallelTable(1, true, true)
   local useCudnn = cudnn ~= nil
+  local modelConf = opt.model
   model:add(net, torch.range(1, opt.nGPU):totable()) -- Use the ith GPU
   model:threads(function()
+      require(modelConf)
       if useCudnn then
         require 'cudnn'
         cudnn.benchmark = true
       end
     end
   )
+  setConfig(model, net, true)
 end
 
 -- Optimization configuration
