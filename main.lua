@@ -17,7 +17,7 @@ cmd:text('==>Options')
 
 cmd:text('===>Model And Training Regime')
 cmd:option('-modelsFolder', './models/', 'Models Folder')
-cmd:option('-resultsFolder', '/media/drive/convNet.results/', 'Models Folder')
+cmd:option('-resultsFolder', './results/', 'Models Folder')
 cmd:option('-model', 'model.lua', 'Model file - must return valid network.')
 cmd:option('-LR', 0.1, 'learning rate')
 cmd:option('-LRDecay', 0, 'learning rate decay (in # samples)')
