@@ -298,8 +298,10 @@ model.reshapeSize = 384
 model.inputMean = 128
 model.inputStd = 128
 model.regime = {
-  epoch        = {1},
-  learningRate = {1e-4},
-  method = {'adam'}
+  epoch        = {1, 10, 15, 20,25},
+  learningRate = {1e-2, 5e-3, 1e-3, 5e-4, 1e-4},
+  weightDecay  = {5e-4, 5e-4, 0 }
 }
+
+
 return model

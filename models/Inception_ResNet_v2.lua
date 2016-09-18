@@ -1,4 +1,5 @@
 require 'nn'
+require 'nngraph'
 
 local SpatialConvolution = nn.SpatialConvolution
 local ReLU = nn.ReLU
@@ -147,39 +148,67 @@ local function Inception_ResNet_C(nInputPlane)
 end
 
 
-local model = Stem()
-model:add(ConvBN(384,256,1,1,1,1,0,0))
 
-for i=1,5 do
-    model:add(Inception_ResNet_A(256))
+
+local auxClassifier = function(nInputDims, mapSize)
+  local m = nn.Sequential()
+  m:add(nn.SpatialAveragePooling(5,5,3,3):ceil())
+  m:add(nn.SpatialConvolution(nInputDims,128,1,1))
+  m:add(nn.ReLU(true))
+  m:add(nn.View(-1):setNumInputDims(3))
+  m:add(nn.Linear(128*mapSize*mapSize, 768))
+  m:add(nn.ReLU(true))
+  m:add(nn.Dropout(0.2))
+  m:add(nn.Linear(768,1000))
+  m:add(nn.LogSoftMax())
+  return m
 end
 
-model:add(Reduction_A(256,256,256,256,384))
+local mainClassifier = function()
+  local m = nn.Sequential()
+  m:add(SpatialAveragePooling(8,8,1,1))
+  m:add(nn.View(-1):setNumInputDims(3))
+  m:add(nn.Dropout(0.2))
+  m:add(nn.Linear(1792, 1000))
+  m:add(nn.LogSoftMax())
+  return m
+end
 
+local input = nn.Identity()()
+local model = Stem()(input)
+model = ConvBN(384,256,1,1,1,1,0,0)(model)
+
+for i=1,5 do
+    model = Inception_ResNet_A(256)(model)
+end
+
+model = Reduction_A(256,256,256,256,384)(model)
+local branch1 = auxClassifier(896, 5)(model)
 for i=1,10 do
-    model:add(Inception_ResNet_B(896))
+    model = Inception_ResNet_B(896)(model)
 end
 
-model:add(Reduction_B(896))
+model = Reduction_B(896)(model)
+local branch2 = auxClassifier(1792, 2)(model)
 
 for i=1,5 do
-    model:add(Inception_ResNet_C(1792))
+    model = Inception_ResNet_C(1792)(model)
 end
 
-model:add(SpatialAveragePooling(8,8,1,1))
-model:add(nn.View(-1):setNumInputDims(3))
-model:add(nn.Dropout(0.2))
-model:add(nn.Linear(1792, 1000))
-model:add(nn.LogSoftMax())
+local mainBranch = mainClassifier()(model)
+local model = nn.gModule({input},{mainBranch,branch1,branch2})
+
+local NLL = nn.ClassNLLCriterion()
+local loss = nn.ParallelCriterion(true):add(NLL):add(NLL,0.3):add(NLL,0.3)
 
 model.inputSize = 299
 model.reshapeSize = 384
 model.inputMean = 128
 model.inputStd = 128
 model.regime = {
-  epoch        = {1},
-  learningRate = {1e-4},
-  method = {'adam'}
+  epoch = {1, 15, 25, 30, 35},
+  learningRate = {1e-2, 5e-3, 1e-3, 5e-4, 1e-4},
+  weightDecay = {5e-4, 5e-4, 0 }
 }
 
-return model
+return model, loss
